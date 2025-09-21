@@ -1,0 +1,12 @@
+geometry_msgs/Pose[] robot_poses
+float64[] ranges
+float64[] bearings
+float64[] range_uncertainties
+float64[] bearing_uncertainties
+---
+geometry_msgs/Pose enhanced_pose
+float64 pose_uncertainty_x
+float64 pose_uncertainty_y
+float64 pose_uncertainty_theta
+bool success
+string message
