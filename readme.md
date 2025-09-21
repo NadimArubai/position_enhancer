@@ -1,5 +1,3 @@
-Here's a comprehensive README.md file for your position_enhancer project:
-
 # Position Enhancer
 
 A ROS2 package for enhancing object position estimates using GTSAM (Georgia Tech Smoothing and Mapping) library for optimal triangulation from multiple observations.
@@ -57,7 +55,7 @@ position_enhancer/
    ```bash
    mkdir -p ~/ros2_ws/src
    cd ~/ros2_ws/src
-   git clone <your-repository-url>
+   git clone https://github.com/NadimArubai/position_enhancer.git
    cd ~/ros2_ws
    colcon build --packages-select position_enhancer
    source install/setup.bash
@@ -167,14 +165,6 @@ Use the debug client (`v3`) to list available services:
 ```bash
 ros2 run position_enhancer position_solver_client_node_v3.py
 ```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
 
 ## License
 
