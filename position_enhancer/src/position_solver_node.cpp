@@ -1,6 +1,6 @@
 #include "rclcpp/rclcpp.hpp"
 #include "geometry_msgs/msg/pose.hpp"
-#include "gtsam_msgs/srv/enhance_position.hpp"
+#include "position_enhancer_interfaces/srv/enhance_position.hpp"
 #include "tf2/LinearMath/Quaternion.h"
 #include "tf2/LinearMath/Matrix3x3.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
@@ -25,7 +25,7 @@ using gtsam::symbol_shorthand::L; // for landmarks/objects
 class PositionSolverNode : public rclcpp::Node {
 public:
     PositionSolverNode() : Node("position_solver") {
-        service_ = this->create_service<gtsam_msgs::srv::EnhancePosition>(
+        service_ = this->create_service<position_enhancer_interfaces::srv::EnhancePosition>(
             "enhance_position",
             std::bind(&PositionSolverNode::handle_service, this,
                      std::placeholders::_1, std::placeholders::_2));
@@ -45,7 +45,7 @@ public:
     }
 
 private:
-    rclcpp::Service<gtsam_msgs::srv::EnhancePosition>::SharedPtr service_;
+    rclcpp::Service<position_enhancer_interfaces::srv::EnhancePosition>::SharedPtr service_;
     
     double default_range_noise_;
     double default_bearing_noise_;
@@ -53,8 +53,8 @@ private:
     double optimization_tolerance_;
     
     void handle_service(
-        const std::shared_ptr<gtsam_msgs::srv::EnhancePosition::Request> request,
-        std::shared_ptr<gtsam_msgs::srv::EnhancePosition::Response> response) {
+        const std::shared_ptr<position_enhancer_interfaces::srv::EnhancePosition::Request> request,
+        std::shared_ptr<position_enhancer_interfaces::srv::EnhancePosition::Response> response) {
         RCLCPP_INFO(this->get_logger(), "Called");
         try {
             // Validate input
@@ -79,8 +79,8 @@ private:
     }
     
     bool validate_request(
-        const std::shared_ptr<gtsam_msgs::srv::EnhancePosition::Request> request,
-        std::shared_ptr<gtsam_msgs::srv::EnhancePosition::Response> response) {
+        const std::shared_ptr<position_enhancer_interfaces::srv::EnhancePosition::Request> request,
+        std::shared_ptr<position_enhancer_interfaces::srv::EnhancePosition::Response> response) {
         
         size_t n_observations = request->robot_poses.size();
         
@@ -153,7 +153,7 @@ private:
     }
     
     std::pair<gtsam::Values, gtsam::NonlinearFactorGraph> solve_position(
-        const std::shared_ptr<gtsam_msgs::srv::EnhancePosition::Request> request) {
+        const std::shared_ptr<position_enhancer_interfaces::srv::EnhancePosition::Request> request) {
         
         size_t n_observations = request->robot_poses.size();
         
@@ -216,7 +216,7 @@ private:
     
     void extract_solution(
         const std::pair<gtsam::Values, gtsam::NonlinearFactorGraph>& solution,
-        std::shared_ptr<gtsam_msgs::srv::EnhancePosition::Response> response) {
+        std::shared_ptr<position_enhancer_interfaces::srv::EnhancePosition::Response> response) {
         
         const auto& [result, graph] = solution;
         

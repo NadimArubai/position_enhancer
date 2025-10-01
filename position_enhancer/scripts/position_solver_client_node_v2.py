@@ -2,7 +2,7 @@
 
 import rclpy
 from rclpy.node import Node
-from gtsam_msgs.srv import EnhancePosition
+from position_enhancer_interfaces.srv import EnhancePosition
 from geometry_msgs.msg import Pose, Quaternion
 import math
 import numpy as np

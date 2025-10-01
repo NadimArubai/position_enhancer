@@ -43,7 +43,6 @@ position_enhancer/
 - `std_msgs`
 - `tf2`
 - `tf2_geometry_msgs`
-- `gtsam_msgs`
 
 ### Required System Dependencies
 - `GTSAM`4.2 (Georgia Tech Smoothing and Mapping library)
@@ -57,7 +56,7 @@ position_enhancer/
    cd ~/ros2_ws/src
    git clone https://github.com/NadimArubai/position_enhancer.git
    cd ~/ros2_ws
-   colcon build --packages-select position_enhancer
+   colcon build --packages-select position_enhancer position_enhancer_interfaces
    source install/setup.bash
    ```
 
@@ -91,7 +90,7 @@ ros2 run position_enhancer position_solver_node
 
 **Service Name:** `/enhance_position`
 
-**Service Type:** `gtsam_msgs/srv/EnhancePosition`
+**Service Type:** `position_enhancer_interfaces/srv/EnhancePosition`
 
 **Request Fields:**
 - `robot_poses[]`: Array of geometry_msgs/Pose (robot poses when observations were made)

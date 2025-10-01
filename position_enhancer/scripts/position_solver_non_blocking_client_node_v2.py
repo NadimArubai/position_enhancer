@@ -2,7 +2,7 @@
 
 import rclpy
 from rclpy.node import Node
-from gtsam_msgs.srv import EnhancePosition
+from position_enhancer_interfaces.srv import EnhancePosition
 from geometry_msgs.msg import Pose, Quaternion
 import math
 import numpy as np
@@ -25,13 +25,14 @@ class PositionSolverClient(Node):
         
         self.service_available = False
         self.check_service_timer = self.create_timer(
-            5.0,  # Check every second
+            5.0,  # Check every 5 seconds
             self.check_service_availability,
             callback_group=self.callback_group
         )
         
-        self.active_requests = {}  # Track active requests by future
-#        self.wait_for_service()
+        # Track single active request
+        self.active_request = None
+        self.request_queue = []  # Queue for pending requests
     
     def wait_for_service(self, timeout_sec=10.0):
         """Wait for the service to become available"""
@@ -63,7 +64,7 @@ class PositionSolverClient(Node):
     
     def solve_object_position_async(self, observations, callback=None, request_id=None):
         """
-        Non-blocking method to solve object position
+        Non-blocking method to solve object position - handles one request at a time
         
         Args:
             observations: list of tuples (robot_x, robot_y, robot_yaw, range, bearing, range_unc, bearing_unc)
@@ -71,7 +72,7 @@ class PositionSolverClient(Node):
             request_id: optional identifier for this request
         
         Returns:
-            future: Future object that can be used to check status or add callbacks
+            future: Future object if request was sent immediately, None if queued
         """
         if not observations:
             self.get_logger().warn('No observations provided')
@@ -95,6 +96,21 @@ class PositionSolverClient(Node):
         if not self.service_available:
             self.get_logger().warn('Service not available, request will be queued')
         
+        # If there's an active request, queue this one
+        if self.active_request is not None:
+            self.get_logger().info(f'Request {request_id} queued - service busy')
+            self.request_queue.append({
+                'request': request,
+                'callback': callback,
+                'request_id': request_id
+            })
+            return None
+        
+        # Send request immediately if no active request
+        return self._send_request(request, callback, request_id)
+    
+    def _send_request(self, request, callback, request_id):
+        """Internal method to send a request"""
         future = self.client.call_async(request)
         
         # Store callback and request_id with the future
@@ -107,16 +123,19 @@ class PositionSolverClient(Node):
         # Add done callback to handle the response
         future.add_done_callback(self._handle_service_response)
         
-        # Track active requests
-        self.active_requests[future] = future._callback_data
+        # Set as active request
+        self.active_request = future
         
+        self.get_logger().info(f'Sent request: {request_id}')
         return future
     
     def _handle_service_response(self, future):
         """Handle the service response when it completes"""
         try:
-            # Remove from active requests
-            callback_data = self.active_requests.pop(future, None)
+            # Clear active request
+            self.active_request = None
+            
+            callback_data = getattr(future, '_callback_data', None)
             
             if not callback_data:
                 self.get_logger().warn('Received response for unknown request')
@@ -126,37 +145,61 @@ class PositionSolverClient(Node):
                 self.get_logger().error(f'Service call failed: {future.exception()}')
                 if callback_data['callback']:
                     callback_data['callback'](None, callback_data['request_id'])
-                return
+            else:
+                result = future.result()
+                if callback_data['callback']:
+                    callback_data['callback'](result, callback_data['request_id'])
             
-            result = future.result()
-            if callback_data['callback']:
-                callback_data['callback'](result, callback_data['request_id'])
+            # Process next request in queue if any
+            self._process_next_queued_request()
                 
         except Exception as e:
             self.get_logger().error(f'Error handling service response: {e}')
+            # Still try to process next request
+            self.active_request = None
+            self._process_next_queued_request()
     
-    def cancel_request(self, future):
-        """Cancel a specific request"""
-        if future in self.active_requests:
+    def _process_next_queued_request(self):
+        """Process the next request in the queue if service is available"""
+        if self.request_queue and self.service_available and self.active_request is None:
+            next_request = self.request_queue.pop(0)
+            self._send_request(
+                next_request['request'],
+                next_request['callback'],
+                next_request['request_id']
+            )
+            self.get_logger().info(f'Processing queued request: {next_request["request_id"]}')
+    
+    def cancel_current_request(self):
+        """Cancel the current active request"""
+        if self.active_request is not None:
             # ROS 2 doesn't support canceling service calls directly,
             # but we can remove the callback and mark it as handled
-            if future in self.active_requests:
-                del self.active_requests[future]
-            self.get_logger().info('Request canceled')
+            self.active_request = None
+            self.get_logger().info('Current request canceled')
     
-    def cancel_all_requests(self):
-        """Cancel all pending requests"""
-        for future in list(self.active_requests.keys()):
-            self.cancel_request(future)
-        self.get_logger().info('All requests canceled')
+    def clear_queue(self):
+        """Clear all queued requests"""
+        queue_size = len(self.request_queue)
+        self.request_queue.clear()
+        self.get_logger().info(f'Cleared {queue_size} queued requests')
     
-    def get_active_requests_count(self):
-        """Get number of active requests"""
-        return len(self.active_requests)
+    def cancel_all(self):
+        """Cancel current request and clear queue"""
+        self.cancel_current_request()
+        self.clear_queue()
+    
+    def get_queue_size(self):
+        """Get number of queued requests"""
+        return len(self.request_queue)
+    
+    def has_active_request(self):
+        """Check if there's an active request"""
+        return self.active_request is not None
 
 # Example usage with non-blocking calls
 def main():
-    print('Starting non-blocking position solver client...')
+    print('Starting non-blocking position solver client (single request at a time)...')
     rclpy.init()
     
     # Use multi-threaded executor for concurrent processing
@@ -177,7 +220,7 @@ def main():
                 error_msg = result.message if result else "Unknown error"
                 print(f"[{request_id}] Error: {error_msg}")
         
-        # Example: make multiple non-blocking calls
+        # Example: make multiple non-blocking calls (will be processed one at a time)
         observation_sets = [
             {
                 'id': 'request_1',
@@ -192,10 +235,17 @@ def main():
                     (1.0, 4.0, math.pi, 6.0, 0.2, 0.1, 0.05),
                     (2.0, 2.0, math.pi/4, 3.0, 0.1, 0.1, 0.05),
                 ]
+            },
+            {
+                'id': 'request_3',
+                'data': [
+                    (5.0, 5.0, math.pi/3, 7.0, 0.4, 0.1, 0.05),
+                    (6.0, 6.0, math.pi/6, 5.0, 0.3, 0.1, 0.05),
+                ]
             }
         ]
         
-        print('Making non-blocking service calls...')
+        print('Making non-blocking service calls (will process one at a time)...')
         futures = []
         for obs_set in observation_sets:
             future = client.solve_object_position_async(
@@ -203,31 +253,36 @@ def main():
                 callback=result_callback,
                 request_id=obs_set['id']
             )
-            futures.append(future)
-            print(f"Sent request: {obs_set['id']}")
+            if future:
+                futures.append(future)
+                print(f"Sent request immediately: {obs_set['id']}")
+            else:
+                print(f"Request queued: {obs_set['id']} (queue size: {client.get_queue_size()})")
         
         # Continue doing other work while waiting for responses
         print('Main thread can continue working...')
         
         # Simulate some other work
         import time
-        for i in range(5):
-            print(f"Doing other work... {i+1}/5")
+        for i in range(8):
+            print(f"Doing other work... {i+1}/8")
+            print(f"Active: {client.has_active_request()}, Queue: {client.get_queue_size()}")
             time.sleep(1)
             executor.spin_once(timeout_sec=0.1)
         
         # Wait for all requests to complete with timeout
         print('Waiting for remaining responses...')
         start_time = time.time()
-        timeout = 10.0
+        timeout = 15.0
         
-        while client.get_active_requests_count() > 0 and (time.time() - start_time) < timeout:
+        while (client.has_active_request() or client.get_queue_size() > 0) and (time.time() - start_time) < timeout:
             executor.spin_once(timeout_sec=0.1)
             time.sleep(0.1)
+            print(f"Waiting... Active: {client.has_active_request()}, Queue: {client.get_queue_size()}")
         
-        if client.get_active_requests_count() > 0:
+        if client.has_active_request() or client.get_queue_size() > 0:
             print('Timeout reached, canceling remaining requests...')
-            client.cancel_all_requests()
+            client.cancel_all()
             
     except Exception as e:
         print(f"Failed to initialize client: {e}")
@@ -238,4 +293,4 @@ def main():
         print('Done')
 
 if __name__ == '__main__':
-    main()
+    main()#
